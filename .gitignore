@@ -12,5 +12,7 @@ dist/
 .vscode/
 
 # Test and coverage outputs
+.venv/
+__pycache__/
 luacov.*.out
 .pytest_cache/

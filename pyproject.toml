@@ -1,0 +1,20 @@
+[project]
+name = "quest-sections-plus-dev"
+version = "0.1.0"
+description = "Headless Lua 5.1 test harness for QuestSectionsPlus WoW: Forever addon"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "lupa>=2.2",
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
