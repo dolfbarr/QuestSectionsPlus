@@ -1,0 +1,16 @@
+# Worktrees and local artifacts
+.worktrees/
+dist/
+*.zip
+
+# Editor and OS files
+.DS_Store
+._.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Test and coverage outputs
+luacov.*.out
+.pytest_cache/
