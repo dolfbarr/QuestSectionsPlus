@@ -7,6 +7,7 @@ local function InstallUIFrameMocks(mockState)
         function fs:GetText() return self._text end
         function fs:SetPoint() end
         function fs:ClearAllPoints() end
+        function fs:SetWidth() end
         function fs:SetJustifyH() end
         function fs:SetTextColor() end
         function fs:Show() self._shown = true end
@@ -21,7 +22,10 @@ local function InstallUIFrameMocks(mockState)
         function tex:SetAllPoints() end
         function tex:SetPoint() end
         function tex:SetHeight() end
+        function tex:SetWidth() end
         function tex:SetSize() end
+        function tex:SetAlpha() end
+        function tex:SetVertexColor() end
         function tex:SetTexture() end
         function tex:SetBlendMode() end
         function tex:SetColorTexture() end
@@ -38,16 +42,34 @@ local function InstallUIFrameMocks(mockState)
             _parent = parent,
             _template = template,
             _shown = template ~= "ObjectiveTrackerModuleTemplate",
+            _width = 260,
             _height = 25,
+            _points = {},
             _scripts = {},
             _attrs = {},
             _text = "",
         }
-        function f:SetSize(_, h) self._height = h or self._height end
+        function f:SetSize(w, h)
+            self._width = w or self._width
+            self._height = h or self._height
+        end
+        function f:SetWidth(w) self._width = w end
+        function f:GetWidth() return self._width end
         function f:SetHeight(h) self._height = h end
         function f:GetHeight() return self._height end
-        function f:SetPoint() end
-        function f:ClearAllPoints() end
+        function f:SetAlpha() end
+        function f:SetTextInsets() end
+        function f:SetFontObject() end
+        function f:SetPoint(point, relTo, relPoint, x, y)
+            if type(relTo) == "number" then
+                y = relPoint
+                x = relTo
+                relTo = nil
+                relPoint = nil
+            end
+            self._points[point] = { point = point, relTo = relTo, relPoint = relPoint, x = x or 0, y = y or 0 }
+        end
+        function f:ClearAllPoints() self._points = {} end
         function f:SetAllPoints() end
         function f:SetParent(p) self._parent = p end
         function f:GetParent() return self._parent end
@@ -80,18 +102,28 @@ local function InstallUIFrameMocks(mockState)
         function f:SetChecked(c) self._checked = c and true or false end
         function f:GetChecked() return self._checked == true end
 
-        if template == "ObjectiveTrackerModuleTemplate" then
-            f.usedBlocks = {}
-            f.Header = NewMockFrame("Frame", nil, f, nil)
-            f.Header.Text = NewMockFontString()
-            f.Header.MinimizeButton = NewMockFrame("Button", nil, f.Header, nil)
-            f.Header.SetCollapsed = function(_, c) f.Header._collapsed = c end
-            f.Header.PlayAddAnimation = function() end
-            f.Header.OnToggle = function(hdr)
+        if template == "ObjectiveTrackerModuleHeaderTemplate" then
+            f.Background = NewMockTexture()
+            f.Text = NewMockFontString()
+            f.MinimizeButton = NewMockFrame("Button", nil, f, nil)
+            f.SetCollapsed = function(_, c) f._collapsed = c and true or false end
+            f.PlayAddAnimation = function() end
+            f.OnToggle = function(hdr)
                 local mod = hdr:GetParent()
-                mod:ToggleCollapsed()
+                if mod and mod.ToggleCollapsed then
+                    mod:ToggleCollapsed()
+                end
             end
+        elseif template == "ObjectiveTrackerModuleTemplate" then
+            f.usedBlocks = {}
+            f.Header = NewMockFrame("Frame", nil, f, "ObjectiveTrackerModuleHeaderTemplate")
             f.ContentsFrame = NewMockFrame("Frame", nil, f, nil)
+        elseif template == "SearchBoxNineSliceTemplate" then
+            f.Background = NewMockTexture()
+            f.searchIcon = NewMockTexture()
+            f.Instructions = NewMockFontString()
+            f.clearButton = NewMockFrame("Button", nil, f, nil)
+            f.HasFocus = function() return false end
         end
 
         createdFrames[#createdFrames + 1] = f
@@ -104,6 +136,46 @@ local function InstallUIFrameMocks(mockState)
     _G.CreateFrame = NewMockFrame
     _G.UIParent = NewMockFrame("Frame", "UIParent", nil, nil)
     _G.SlashCmdList = {}
+
+    _G.MenuUtil = {
+        CreateContextMenu = function(ownerRegion, generator)
+            local items = {}
+            local rootDesc = {
+                CreateTitle = function(_, text)
+                    items[#items + 1] = { kind = "title", text = text }
+                end,
+                CreateDivider = function()
+                    items[#items + 1] = { kind = "divider" }
+                end,
+                CreateRadio = function(_, text, isSelected, setSelected)
+                    items[#items + 1] = {
+                        kind = "radio",
+                        text = text,
+                        isSelected = isSelected,
+                        setSelected = setSelected,
+                    }
+                end,
+                CreateCheckbox = function(_, text, isSelected, setSelected)
+                    items[#items + 1] = {
+                        kind = "checkbox",
+                        text = text,
+                        isSelected = isSelected,
+                        setSelected = setSelected,
+                    }
+                end,
+                CreateButton = function(_, text, callback)
+                    items[#items + 1] = {
+                        kind = "button",
+                        text = text,
+                        callback = callback,
+                    }
+                end,
+            }
+            generator(ownerRegion, rootDesc)
+            mockState.lastContextMenu = { owner = ownerRegion, items = items }
+            return mockState.lastContextMenu
+        end,
+    }
 
     _G.hooksecurefunc = function(tbl, key, hookFn)
         local orig = tbl[key]
@@ -364,6 +436,80 @@ local function RegisterUIModuleSpecs(T, loadAddon)
         -- Collapsing the parent tracker hides the overlay cleanly out of combat
         assert.IsTrue(ns.SecureItemOverlay.SyncActiveModules(ns.TrackerHost.sectionPool, true))
         assert.IsFalse(overlay:IsShown())
+    end)
+
+    T:Test(
+        "Master Quests header folds quests panel and native FilterButton MenuUtil + SearchBoxNineSlice align cleanly",
+        function(assert)
+        local mockState, ns = loadAddon()
+        InstallUIFrameMocks(mockState)
+        mockState:LoadScreenshotFixtures()
+        mockState.realZone = "Stormwind City"
+        mockState.uiMapID = 1453
+        ns.TrackerHost:Init()
+
+        local fb = ns.TrackerHost.filterBar
+        assert.NotNil(fb.Header, "Master Quests header is missing on FilterBar")
+        assert.Equal("Quests (17)", fb.Header.Text:GetText())
+        assert.IsFalse(fb:IsCollapsed())
+        assert.Equal(26, fb:GetContentsHeight())
+        assert.Equal(nil, fb.topRow, "Custom flat pill toolbar should not exist")
+        assert.Equal("SearchBoxNineSliceTemplate", fb.searchBox._template)
+
+        -- Left-clicking native Header.FilterButton opens Blizzard MenuUtil context menu
+        local nativeFilterBtn = _G.ObjectiveTrackerFrame.Header.FilterButton
+        local onClick = nativeFilterBtn:GetScript("OnClick")
+        assert.NotNil(onClick)
+        onClick(nativeFilterBtn, "LeftButton")
+        assert.NotNil(mockState.lastContextMenu)
+
+        local function FindMenuItem(label)
+            for _, item in ipairs(mockState.lastContextMenu.items) do
+                if item.text == label then
+                    return item
+                end
+            end
+            return nil
+        end
+
+        -- Select "Current Zone" in Stormwind City (0 local quests) -> Quests (0/17 - Zone) + fallback row
+        local zoneRadio = FindMenuItem("Current Zone")
+        assert.NotNil(zoneRadio)
+        zoneRadio.setSelected()
+        assert.Equal("Quests (0/17 - Zone)", fb.Header.Text:GetText())
+        assert.IsTrue(fb.fallbackBtn:IsShown())
+
+        -- Right-clicking native Header.FilterButton toggles native SearchBoxNineSliceTemplate within 7..-3 (250px) rail
+        onClick(nativeFilterBtn, "RightButton")
+        assert.IsTrue(fb.searchBox:IsShown())
+        assert.Equal(7, fb.searchBox._points.TOPLEFT.x)
+        assert.Equal(-3, fb.searchBox._points.TOPRIGHT.x)
+
+        -- Reset Filters via MenuUtil restores All mode and hides search box
+        onClick(nativeFilterBtn, "LeftButton")
+        local resetBtn = FindMenuItem("Reset Filters")
+        assert.NotNil(resetBtn)
+        resetBtn.callback()
+        assert.Equal("Quests (17)", fb.Header.Text:GetText())
+        assert.IsFalse(fb.searchBox:IsShown())
+
+        -- Collapse All / Expand All Sections via MenuUtil
+        onClick(nativeFilterBtn, "LeftButton")
+        FindMenuItem("Collapse All Sections").callback()
+        assert.IsTrue(ns.TrackerHost.sectionPool[1]:IsCollapsed())
+        FindMenuItem("Expand All Sections").callback()
+        assert.IsFalse(ns.TrackerHost.sectionPool[1]:IsCollapsed())
+
+        -- Collapsing master Quests header hides search, fallback, and all child quest sections
+        fb.Header:OnToggle()
+        assert.IsTrue(fb:IsCollapsed())
+        assert.Equal(26, fb:GetContentsHeight())
+        assert.Equal(nil, ns.TrackerHost.sectionPool[1].sectionKey)
+
+        -- Expanding master Quests header restores all child sections
+        fb.Header:OnToggle()
+        assert.IsFalse(fb:IsCollapsed())
+        assert.Equal("READY", ns.TrackerHost.sectionPool[1].sectionKey)
     end)
 end
 

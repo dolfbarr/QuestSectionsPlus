@@ -37,6 +37,7 @@ local CHAR_DEFAULTS = {
     hideGray = false,
     searchQuery = "",
     searchExpanded = false,
+    questsMasterCollapsed = false,
     lastZoneKey = "",
     manualCollapsed = {},
     dismissedNotices = {},
@@ -70,6 +71,7 @@ local function SerializeBackup(account, char)
         account.showFilterBar and "1" or "0",
         char.hideGray and "1" or "0",
         char.filterMode or "ALL",
+        char.questsMasterCollapsed and "1" or "0",
     }
     return table.concat(parts, ":")
 end
@@ -95,6 +97,9 @@ local function ApplyBackupIfFresh(account, char, raw)
     char.hideGray = fields[8] == "1"
     if VALID_FILTERS[fields[9]] then
         char.filterMode = fields[9]
+    end
+    if fields[10] ~= nil then
+        char.questsMasterCollapsed = fields[10] == "1"
     end
 end
 
@@ -191,6 +196,17 @@ end
 function Store:SetSearchExpanded(expanded)
     local ch = self:GetChar()
     ch.searchExpanded = expanded and true or false
+end
+
+function Store:SetQuestsMasterCollapsed(collapsed)
+    local ch = self:GetChar()
+    ch.questsMasterCollapsed = collapsed and true or false
+    self:SyncBackupCVar()
+end
+
+function Store:IsQuestsMasterCollapsed()
+    local ch = self:GetChar()
+    return ch.questsMasterCollapsed == true
 end
 
 function Store:SetManualCollapsed(sectionKey, isCollapsed)

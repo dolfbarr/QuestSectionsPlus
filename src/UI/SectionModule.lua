@@ -194,12 +194,28 @@ function SectionModule.CreatePool(container)
         mod.headerDisplayText = ""
         mod:SetScript("OnEvent", mod.OnEvent)
 
-        -- Allow clicking anywhere on the section header bar (not just the 16x16 '-' icon) to fold/unfold
+        -- Allow clicking anywhere on the section header bar (not just the 16x16 '-' icon) to fold/unfold,
+        -- and visually subordinate sub-section headers beneath the master "Quests" header.
         if mod.Header then
+            if mod.Header.Text then
+                mod.Header.Text:ClearAllPoints()
+                mod.Header.Text:SetPoint("LEFT", 14, 0)
+                if mod.Header.Text.SetWidth then
+                    mod.Header.Text:SetWidth(192)
+                end
+            end
+            if mod.Header.Background and mod.Header.Background.SetAlpha then
+                mod.Header.Background:SetAlpha(0.72)
+            end
             mod.Header:EnableMouse(true)
             mod.Header:SetScript("OnMouseUp", function(hdr, button)
                 if button == "LeftButton" and hdr.OnToggle then
                     hdr:OnToggle()
+                elseif button == "RightButton"
+                    and ns.TrackerHost
+                    and ns.TrackerHost.filterBar
+                    and ns.TrackerHost.filterBar.OpenFilterMenu then
+                    ns.TrackerHost.filterBar:OpenFilterMenu(hdr)
                 end
             end)
         end

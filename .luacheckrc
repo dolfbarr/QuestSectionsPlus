@@ -54,6 +54,11 @@ read_globals = {
     "AchievementObjectiveTracker",
     "ProfessionsRecipeTracker",
     "Settings",
+    "MenuUtil",
+    "SearchBoxTemplate_OnTextChanged",
+    "SearchBoxTemplate_OnEditFocusLost",
+    "SearchBoxTemplate_OnEditFocusGained",
+    "SearchBoxTemplate_ClearText",
     -- Optional Addon Bridges
     "ForeverQuestPins",
     "Questie",

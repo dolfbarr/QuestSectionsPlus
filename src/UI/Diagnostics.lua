@@ -176,8 +176,8 @@ function Diagnostics.RegisterSettingsPanel()
     y = y - 30
     CreateCheckbox(
         panel, y,
-        "Show quick filter toolbar under 'All Objectives'",
-        "Shows the All / Zone / Dung / Ready filter pills and search toggle.",
+        "Show Filter button on 'All Objectives' header",
+        "Shows Blizzard's native Filter icon on All Objectives for quest filtering and search.",
         function() return Store:GetAccount().showFilterBar end,
         function(v) Store:SetAccountOption("showFilterBar", v) end
     )
@@ -231,6 +231,19 @@ function Diagnostics.HandleSlashCommand(rawMsg)
         Store:SetAccountOption("smartAutoFold", nextVal)
         TrackerHost:RequestReflow("slash_autofold")
         Compat.Print("Smart Auto-Fold: " .. (nextVal and "ON" or "OFF"))
+    elseif cmd == "search" or cmd == "find" then
+        local query = Classifier.Trim(rest)
+        if query ~= "" then
+            Store:SetSearchExpanded(true)
+            Store:SetSearchQuery(query)
+        else
+            local nextExpanded = not Store:GetChar().searchExpanded
+            Store:SetSearchExpanded(nextExpanded)
+            if not nextExpanded then
+                Store:SetSearchQuery("")
+            end
+        end
+        TrackerHost:RequestReflow("slash_search")
     elseif cmd == "reset" then
         Store:ResetAll()
         TrackerHost:RequestReflow("slash_reset")

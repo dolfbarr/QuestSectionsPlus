@@ -89,6 +89,12 @@ function TrackerHost:Init()
         onToggleFilterBar = function()
             self:RequestReflow("toggle_filter_bar")
         end,
+        onToggleMasterCollapse = function()
+            self:RequestReflow("master_quests_collapse")
+        end,
+        onSetAllSectionsCollapsed = function(collapsed)
+            self:SetAllSectionsCollapsed(collapsed)
+        end,
     })
 
     ObjectiveTrackerManager:SetModuleContainer(self.filterBar, ObjectiveTrackerFrame)
@@ -125,10 +131,31 @@ function TrackerHost:MarkActiveSectionsDirty()
 end
 
 function TrackerHost:SyncItemOverlays()
-    local isCollapsed = ObjectiveTrackerFrame
+    local isCollapsed = (ObjectiveTrackerFrame
         and ObjectiveTrackerFrame.IsCollapsed
-        and ObjectiveTrackerFrame:IsCollapsed()
+        and ObjectiveTrackerFrame:IsCollapsed())
+        or Store:IsQuestsMasterCollapsed()
     SecureItemOverlay.SyncActiveModules(self.sectionPool, isCollapsed)
+end
+
+function TrackerHost:SetAllSectionsCollapsed(collapsed)
+    if not collapsed and Store:IsQuestsMasterCollapsed() then
+        Store:SetQuestsMasterCollapsed(false)
+    end
+    local vm = self.lastViewModel
+    if vm and vm.sections then
+        for _, sec in ipairs(vm.sections) do
+            if sec.key then
+                Store:SetManualCollapsed(sec.key, collapsed)
+            end
+        end
+    end
+    for _, mod in ipairs(self.sectionPool) do
+        if mod.sectionKey then
+            Store:SetManualCollapsed(mod.sectionKey, collapsed)
+        end
+    end
+    self:RequestReflow(collapsed and "collapse_all_sections" or "expand_all_sections")
 end
 
 function TrackerHost:RequestReflow(reason)
@@ -165,6 +192,7 @@ function TrackerHost:RequestReflow(reason)
         end
         if self.filterBar then
             self.filterBar.totalWatched = 0
+            self.filterBar.totalVisible = 0
             self.filterBar.fallbackMessage = nil
             self.filterBar.pendingCombatReflow = false
             self.filterBar:MarkDirty()
@@ -179,17 +207,20 @@ function TrackerHost:RequestReflow(reason)
         return true, "disabled_passthrough"
     end
 
+    local masterCollapsed = Store:IsQuestsMasterCollapsed()
     SuppressOrRestoreStockQuestList(true)
-    SetNonQuestModulesSuppressed(self, vm.hideNonQuestModules)
+    SetNonQuestModulesSuppressed(self, (not masterCollapsed) and vm.hideNonQuestModules)
 
     if self.filterBar then
         self.filterBar.totalWatched = vm.totalWatched
+        self.filterBar.totalVisible = vm.totalAfterFilter
         self.filterBar.fallbackMessage = vm.emptyFallbackText
         self.filterBar.pendingCombatReflow = false
+        self.filterBar:ApplyCollapsedState(masterCollapsed)
         self.filterBar:MarkDirty()
     end
 
-    local sectionCount = #vm.sections
+    local sectionCount = masterCollapsed and 0 or #vm.sections
     for i = 1, #self.sectionPool do
         local mod = self.sectionPool[i]
         if i <= sectionCount then

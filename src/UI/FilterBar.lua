@@ -5,15 +5,21 @@ local Store = ns.Store
 local FilterBar = {}
 ns.FilterBar = FilterBar
 
-local ROW_HEIGHT = 22
+local TRACKER_WIDTH = 260
+local LEFT_INSET = 7
+local LINE_INSET = 14
+local RIGHT_INSET = -3
+
+local HEADER_HEIGHT = 26
+local SEARCH_GAP_Y = 4
 local SEARCH_ROW_HEIGHT = 22
+local FALLBACK_GAP_Y = 4
 local FALLBACK_ROW_HEIGHT = 20
 
-local PILLS = {
-    { mode = "ALL", label = "All", width = 34 },
-    { mode = "ZONE", label = "Zone", width = 44 },
-    { mode = "DUNGEON", label = "Dung", width = 46 },
-    { mode = "READY", label = "Ready", width = 48 },
+local FILTER_LABELS = {
+    ZONE = "Zone",
+    DUNGEON = "Dungeon",
+    READY = "Ready",
 }
 
 local FilterBarModuleMixin = {
@@ -23,12 +29,55 @@ local FilterBarModuleMixin = {
     hasDisplayPriority = false,
     mustFit = false,
     isDirty = false,
+    isCollapsed = false,
     contentsHeight = 0,
 }
+
+local function BuildActiveFilterTags(ch)
+    local tags = {}
+    local mode = ch.filterMode or "ALL"
+    if FILTER_LABELS[mode] then
+        tags[#tags + 1] = FILTER_LABELS[mode]
+    end
+    if ch.hideGray then
+        tags[#tags + 1] = "!Gray"
+    end
+    if (ch.searchQuery or "") ~= "" then
+        tags[#tags + 1] = "Search"
+    end
+    return tags
+end
+
+local function FormatMasterHeaderText(self, acc, ch)
+    local baseLabel = TRACKER_HEADER_QUESTS or "Quests"
+    local tags = BuildActiveFilterTags(ch)
+    local tagSuffix = (#tags > 0) and table.concat(tags, ", ") or nil
+
+    if acc.showCountBadges == false then
+        if tagSuffix then
+            return string.format("%s (%s)", baseLabel, tagSuffix)
+        end
+        return baseLabel
+    end
+
+    local totalWatched = self.totalWatched or 0
+    local totalVisible = self.totalVisible
+    if totalVisible == nil then
+        totalVisible = totalWatched
+    end
+
+    if tagSuffix then
+        return string.format("%s (%d/%d - %s)", baseLabel, totalVisible, totalWatched, tagSuffix)
+    elseif totalVisible ~= totalWatched then
+        return string.format("%s (%d/%d)", baseLabel, totalVisible, totalWatched)
+    end
+    return string.format("%s (%d)", baseLabel, totalWatched)
+end
 
 function FilterBarModuleMixin:SetContainer(container)
     self.parentContainer = container
     self:SetParent(container)
+    self:SetWidth(TRACKER_WIDTH)
     self:ClearAllPoints()
     self:SetPoint("TOPLEFT")
 end
@@ -73,82 +122,175 @@ function FilterBarModuleMixin:GetContentsHeight()
     return self.contentsHeight or 0
 end
 
-function FilterBarModuleMixin:RefreshVisualState()
-    local acc = Store:GetAccount()
-    local ch = Store:GetChar()
-    local activeMode = ch.filterMode or "ALL"
-
-    for _, btn in ipairs(self.pillButtons or {}) do
-        local isSelected = (btn.filterMode == activeMode)
-        if isSelected then
-            btn.Label:SetTextColor(1.0, 0.82, 0.0)
-            btn.ActiveUnderline:Show()
-            btn.Bg:SetColorTexture(0.28, 0.22, 0.06, 0.72)
-        else
-            btn.Label:SetTextColor(0.80, 0.80, 0.80)
-            btn.ActiveUnderline:Hide()
-            btn.Bg:SetColorTexture(0.08, 0.08, 0.08, 0.45)
-        end
-    end
-
-    if self.grayBtn then
-        if ch.hideGray then
-            self.grayBtn.Label:SetTextColor(1.0, 0.82, 0.0)
-            self.grayBtn.Bg:SetColorTexture(0.28, 0.22, 0.06, 0.72)
-        else
-            self.grayBtn.Label:SetTextColor(0.62, 0.62, 0.62)
-            self.grayBtn.Bg:SetColorTexture(0.08, 0.08, 0.08, 0.45)
-        end
-    end
-
-    local hasSearchText = (ch.searchQuery or "") ~= ""
-    local showSearch = ch.searchExpanded or hasSearchText
-    if self.searchBtn then
-        if showSearch then
-            self.searchBtn.Label:SetTextColor(1.0, 0.82, 0.0)
-            self.searchBtn.Bg:SetColorTexture(0.28, 0.22, 0.06, 0.72)
-        else
-            self.searchBtn.Label:SetTextColor(0.80, 0.80, 0.80)
-            self.searchBtn.Bg:SetColorTexture(0.08, 0.08, 0.08, 0.45)
-        end
-    end
-
-    if self.searchRow then
-        self.searchRow:SetShown(showSearch and acc.showFilterBar ~= false)
-        if self.searchBox and self.searchBox:GetText() ~= (ch.searchQuery or "") then
-            self.updatingSearchText = true
-            self.searchBox:SetText(ch.searchQuery or "")
-            self.updatingSearchText = false
-        end
-    end
-
-    if self.combatBadge then
-        self.combatBadge:SetShown(self.pendingCombatReflow == true)
-    end
-
-    local showFallback = self.fallbackMessage ~= nil and self.fallbackMessage ~= ""
-    if self.fallbackBtn then
-        if showFallback then
-            self.fallbackBtn.Text:SetText(self.fallbackMessage)
-            local topOffset = -(ROW_HEIGHT + (showSearch and SEARCH_ROW_HEIGHT or 0) + 2)
-            if acc.showFilterBar == false then
-                topOffset = -2
-            end
-            self.fallbackBtn:ClearAllPoints()
-            self.fallbackBtn:SetPoint("TOPLEFT", self, "TOPLEFT", 6, topOffset)
-            self.fallbackBtn:SetPoint("TOPRIGHT", self, "TOPRIGHT", -4, topOffset)
-            self.fallbackBtn:Show()
-        else
-            self.fallbackBtn:Hide()
-        end
+function FilterBarModuleMixin:ApplyCollapsedState(collapsed)
+    self.isCollapsed = collapsed and true or false
+    if self.Header and self.Header.SetCollapsed then
+        self.Header:SetCollapsed(self.isCollapsed)
     end
 end
 
-function FilterBarModuleMixin:ComputeDesiredHeight()
+function FilterBarModuleMixin:IsCollapsed()
+    return self.isCollapsed == true
+end
+
+function FilterBarModuleMixin:SetCollapsed(collapsed)
+    self:ApplyCollapsedState(collapsed)
+    self:MarkDirty()
+end
+
+function FilterBarModuleMixin:ToggleCollapsed()
+    local nextCollapsed = not self:IsCollapsed()
+    Store:SetQuestsMasterCollapsed(nextCollapsed)
+    if self.callbacks and self.callbacks.onToggleMasterCollapse then
+        self.callbacks.onToggleMasterCollapse(nextCollapsed)
+    else
+        self:SetCollapsed(nextCollapsed)
+    end
+end
+
+function FilterBarModuleMixin:ToggleSearchBox()
+    local ch = Store:GetChar()
+    local hasSearchText = (ch.searchQuery or "") ~= ""
+    local currentlyOpen = ch.searchExpanded or hasSearchText
+    local nextExpanded = not currentlyOpen
+
+    if nextExpanded and self:IsCollapsed() then
+        Store:SetQuestsMasterCollapsed(false)
+        self:ApplyCollapsedState(false)
+    end
+
+    Store:SetSearchExpanded(nextExpanded)
+    if not nextExpanded and hasSearchText then
+        Store:SetSearchQuery("")
+    end
+    if self.callbacks and self.callbacks.onSearchChanged then
+        self.callbacks.onSearchChanged()
+    end
+    if nextExpanded and self.searchBox and self.searchBox.SetFocus then
+        self.searchBox:SetFocus()
+    end
+end
+
+function FilterBarModuleMixin:ResetAllFilters()
+    Store:SetFilterMode("ALL")
+    Store:SetHideGray(false)
+    Store:SetSearchQuery("")
+    Store:SetSearchExpanded(false)
+    if self.searchBox and self.searchBox.ClearFocus then
+        self.searchBox:ClearFocus()
+    end
+    if self.callbacks and self.callbacks.onResetFilters then
+        self.callbacks.onResetFilters()
+    end
+end
+
+function FilterBarModuleMixin:PopulateFilterMenu(rootDescription)
+    if not rootDescription then
+        return
+    end
+    local callbacks = self.callbacks or {}
+
+    if rootDescription.CreateTitle then
+        rootDescription:CreateTitle("Quest Filter")
+    end
+
+    local radioItems = {
+        { mode = "ALL", label = "All Tracked Quests" },
+        { mode = "ZONE", label = "Current Zone" },
+        { mode = "DUNGEON", label = "Dungeons & Raids" },
+        { mode = "READY", label = "Ready for Turn-In" },
+    }
+    for _, item in ipairs(radioItems) do
+        local mode = item.mode
+        rootDescription:CreateRadio(
+            item.label,
+            function()
+                return (Store:GetChar().filterMode or "ALL") == mode
+            end,
+            function()
+                if callbacks.onSelectFilter then
+                    callbacks.onSelectFilter(mode)
+                else
+                    Store:SetFilterMode(mode)
+                end
+            end
+        )
+    end
+
+    if rootDescription.CreateDivider then
+        rootDescription:CreateDivider()
+    end
+
+    rootDescription:CreateCheckbox(
+        "Hide Trivial (Gray) Quests",
+        function()
+            return Store:GetChar().hideGray == true
+        end,
+        function()
+            if callbacks.onToggleHideGray then
+                callbacks.onToggleHideGray()
+            else
+                Store:SetHideGray(not Store:GetChar().hideGray)
+            end
+        end
+    )
+
+    rootDescription:CreateCheckbox(
+        "Search Tracked Quests",
+        function()
+            local ch = Store:GetChar()
+            return ch.searchExpanded == true or (ch.searchQuery or "") ~= ""
+        end,
+        function()
+            self:ToggleSearchBox()
+        end
+    )
+
+    if rootDescription.CreateDivider then
+        rootDescription:CreateDivider()
+    end
+
+    rootDescription:CreateButton("Expand All Sections", function()
+        if callbacks.onSetAllSectionsCollapsed then
+            callbacks.onSetAllSectionsCollapsed(false)
+        end
+    end)
+
+    rootDescription:CreateButton("Collapse All Sections", function()
+        if callbacks.onSetAllSectionsCollapsed then
+            callbacks.onSetAllSectionsCollapsed(true)
+        end
+    end)
+
+    local ch = Store:GetChar()
+    local hasActiveFilter = (ch.filterMode ~= "ALL")
+        or ch.hideGray
+        or ((ch.searchQuery or "") ~= "")
+        or ch.searchExpanded
+    if hasActiveFilter then
+        if rootDescription.CreateDivider then
+            rootDescription:CreateDivider()
+        end
+        rootDescription:CreateButton("Reset Filters", function()
+            self:ResetAllFilters()
+        end)
+    end
+end
+
+function FilterBarModuleMixin:OpenFilterMenu(ownerRegion)
+    if MenuUtil and MenuUtil.CreateContextMenu then
+        return MenuUtil.CreateContextMenu(ownerRegion or self.Header, function(_, rootDescription)
+            self:PopulateFilterMenu(rootDescription)
+        end)
+    end
+    return nil
+end
+
+function FilterBarModuleMixin:ComputeLayoutSpec()
     local acc = Store:GetAccount()
     local ch = Store:GetChar()
     if not acc.enabled then
-        return 0
+        return 0, false, false, 0, 0
     end
 
     local totalWatched = self.totalWatched or 0
@@ -158,43 +300,112 @@ function FilterBarModuleMixin:ComputeDesiredHeight()
         or ch.searchExpanded
 
     if totalWatched == 0 and not hasNonDefaultState then
-        return 0
+        return 0, false, false, 0, 0
     end
 
-    local height = 0
-    if acc.showFilterBar ~= false then
-        height = height + ROW_HEIGHT
-        if ch.searchExpanded or ((ch.searchQuery or "") ~= "") then
-            height = height + SEARCH_ROW_HEIGHT
+    if self:IsCollapsed() then
+        return HEADER_HEIGHT, false, false, 0, 0
+    end
+
+    local cursorY = HEADER_HEIGHT
+    local hasSearchText = (ch.searchQuery or "") ~= ""
+    local showSearch = ch.searchExpanded or hasSearchText
+    local showFallback = (self.fallbackMessage ~= nil and self.fallbackMessage ~= "")
+
+    local searchY = 0
+    local fallbackY = 0
+
+    if showSearch then
+        cursorY = cursorY + SEARCH_GAP_Y
+        searchY = -cursorY
+        cursorY = cursorY + SEARCH_ROW_HEIGHT
+    end
+
+    if showFallback then
+        cursorY = cursorY + FALLBACK_GAP_Y
+        fallbackY = -cursorY
+        cursorY = cursorY + FALLBACK_ROW_HEIGHT
+    end
+
+    return cursorY, showSearch, showFallback, searchY, fallbackY
+end
+
+function FilterBarModuleMixin:ComputeDesiredHeight()
+    local desired = self:ComputeLayoutSpec()
+    return desired
+end
+
+function FilterBarModuleMixin:RefreshVisualState()
+    local acc = Store:GetAccount()
+    local ch = Store:GetChar()
+
+    if self.nativeFilterBtn then
+        self.nativeFilterBtn:SetShown(acc.enabled and acc.showFilterBar ~= false)
+    end
+
+    if self.Header and self.Header.Text then
+        self.Header.Text:SetText(FormatMasterHeaderText(self, acc, ch))
+    end
+    if self.Header and self.Header.SetCollapsed then
+        self.Header:SetCollapsed(self:IsCollapsed())
+    end
+
+    if self.combatBadge then
+        self.combatBadge:SetShown(self.pendingCombatReflow == true)
+    end
+
+    local _, showSearch, showFallback, searchY, fallbackY = self:ComputeLayoutSpec()
+
+    if self.searchBox then
+        if showSearch then
+            self.searchBox:ClearAllPoints()
+            self.searchBox:SetPoint("TOPLEFT", self, "TOPLEFT", LEFT_INSET, searchY)
+            self.searchBox:SetPoint("TOPRIGHT", self, "TOPRIGHT", RIGHT_INSET, searchY)
+            self.searchBox:Show()
+            if self.searchBox:GetText() ~= (ch.searchQuery or "") then
+                self.updatingSearchText = true
+                self.searchBox:SetText(ch.searchQuery or "")
+                self.updatingSearchText = false
+            end
+        else
+            self.searchBox:Hide()
         end
     end
-    if self.fallbackMessage and self.fallbackMessage ~= "" then
-        height = height + FALLBACK_ROW_HEIGHT + 2
+
+    if self.fallbackBtn then
+        if showFallback then
+            self.fallbackBtn.Text:SetText(self.fallbackMessage)
+            self.fallbackBtn:ClearAllPoints()
+            self.fallbackBtn:SetPoint("TOPLEFT", self, "TOPLEFT", LINE_INSET, fallbackY)
+            self.fallbackBtn:SetPoint("TOPRIGHT", self, "TOPRIGHT", RIGHT_INSET, fallbackY)
+            self.fallbackBtn:Show()
+        else
+            self.fallbackBtn:Hide()
+        end
     end
-    return height
 end
 
 function FilterBarModuleMixin:Update(availableHeight)
     self.isDirty = false
     local desired = self:ComputeDesiredHeight()
-    if desired <= 0 or (availableHeight and availableHeight < desired) then
+    if desired <= 0 or (availableHeight and availableHeight < HEADER_HEIGHT) then
         self.contentsHeight = 0
         self:Hide()
         return 0, false
     end
 
     self.contentsHeight = desired
-    self:SetHeight(desired)
+    self:SetSize(TRACKER_WIDTH, desired)
     self:RefreshVisualState()
 
-    local containerCollapsed = self.parentContainer and self.parentContainer.IsCollapsed
+    local containerCollapsed = self.parentContainer
+        and self.parentContainer.IsCollapsed
         and self.parentContainer:IsCollapsed()
     if containerCollapsed then
         self:Hide()
     else
-        local acc = Store:GetAccount()
-        if self.topRow then
-            self.topRow:SetShown(acc.showFilterBar ~= false)
+        if self.Header then
+            self.Header:Show()
         end
         self:Show()
     end
@@ -202,160 +413,55 @@ function FilterBarModuleMixin:Update(availableHeight)
     return self.contentsHeight, false
 end
 
-local function CreatePillButton(parent, label, width, tooltipTitle, tooltipBody, onClick)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(width, 18)
-
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.08, 0.08, 0.08, 0.45)
-    btn.Bg = bg
-
-    local borderTop = btn:CreateTexture(nil, "BORDER")
-    borderTop:SetHeight(1)
-    borderTop:SetPoint("TOPLEFT", 0, 0)
-    borderTop:SetPoint("TOPRIGHT", 0, 0)
-    borderTop:SetColorTexture(0.45, 0.38, 0.20, 0.55)
-
-    local underline = btn:CreateTexture(nil, "OVERLAY")
-    underline:SetHeight(2)
-    underline:SetPoint("BOTTOMLEFT", 1, 0)
-    underline:SetPoint("BOTTOMRIGHT", -1, 0)
-    underline:SetColorTexture(1.0, 0.82, 0.0, 0.95)
-    underline:Hide()
-    btn.ActiveUnderline = underline
-
-    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints()
-    hl:SetColorTexture(1.0, 0.85, 0.35, 0.16)
-
-    local fs = btn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    fs:SetPoint("CENTER", 0, 0)
-    fs:SetText(label)
-    btn.Label = fs
-
-    btn:SetScript("OnClick", function(self)
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        end
-        onClick(self)
-    end)
-
-    if tooltipTitle then
-        btn:SetScript("OnEnter", function(self)
-            if GameTooltip then
-                GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-                GameTooltip:SetText(tooltipTitle, 1, 0.82, 0)
-                if tooltipBody then
-                    GameTooltip:AddLine(tooltipBody, 0.85, 0.85, 0.85, true)
-                end
-                GameTooltip:Show()
-            end
-        end)
-        btn:SetScript("OnLeave", function()
-            if GameTooltip then
-                GameTooltip:Hide()
-            end
-        end)
-    end
-
-    return btn
-end
-
 function FilterBar.Create(parentContainer, callbacks)
     local frame = CreateFrame("Frame", "QuestSectionsPlusFilterBar", parentContainer)
-    frame:SetSize(260, ROW_HEIGHT)
+    frame:SetSize(TRACKER_WIDTH, HEADER_HEIGHT)
     Mixin(frame, FilterBarModuleMixin)
-    frame.pillButtons = {}
+    frame.callbacks = callbacks
     frame.totalWatched = 0
+    frame.totalVisible = 0
     frame.fallbackMessage = nil
     frame.pendingCombatReflow = false
+    frame.isCollapsed = Store:IsQuestsMasterCollapsed()
 
-    local topRow = CreateFrame("Frame", nil, frame)
-    topRow:SetHeight(ROW_HEIGHT)
-    topRow:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, 0)
-    topRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, 0)
-    frame.topRow = topRow
-
-    local xOffset = 0
-    for _, spec in ipairs(PILLS) do
-        local btn = CreatePillButton(
-            topRow,
-            spec.label,
-            spec.width,
-            "Filter: " .. spec.label,
-            "Non-destructively filter displayed quests without untracking.",
-            function()
-                if callbacks and callbacks.onSelectFilter then
-                    callbacks.onSelectFilter(spec.mode)
-                end
+    -- Master foldable "Quests" category header (Blizzard ObjectiveTrackerModuleHeaderTemplate)
+    local header = CreateFrame("Frame", nil, frame, "ObjectiveTrackerModuleHeaderTemplate")
+    header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    header:EnableMouse(true)
+    header:SetScript("OnMouseUp", function(hdr, button)
+        if button == "LeftButton" and hdr.OnToggle then
+            hdr:OnToggle()
+        elseif button == "RightButton" then
+            frame:OpenFilterMenu(hdr)
+        end
+    end)
+    if header.MinimizeButton and not header.MinimizeButton:GetScript("OnClick") then
+        header.MinimizeButton:SetScript("OnClick", function()
+            if header.OnToggle then
+                header:OnToggle()
             end
-        )
-        btn.filterMode = spec.mode
-        btn:SetPoint("LEFT", topRow, "LEFT", xOffset, 0)
-        xOffset = xOffset + spec.width + 3
-        frame.pillButtons[#frame.pillButtons + 1] = btn
+        end)
     end
+    frame.Header = header
+    frame:ApplyCollapsedState(frame.isCollapsed)
 
-    local grayBtn = CreatePillButton(
-        topRow,
-        "!Gray",
-        40,
-        "Hide Trivial (Gray) Quests",
-        "Hides low-level gray quests from the tracker display.",
-        function()
-            if callbacks and callbacks.onToggleHideGray then
-                callbacks.onToggleHideGray()
-            end
-        end
-    )
-    grayBtn:SetPoint("LEFT", topRow, "LEFT", xOffset, 0)
-    xOffset = xOffset + 43
-    frame.grayBtn = grayBtn
-
-    local searchBtn = CreatePillButton(
-        topRow,
-        "Find",
-        34,
-        "Search Tracked Quests",
-        "Filter quests by title, zone, level, or objective text.",
-        function()
-            local ch = Store:GetChar()
-            local nextExpanded = not ch.searchExpanded
-            Store:SetSearchExpanded(nextExpanded)
-            if not nextExpanded and (ch.searchQuery or "") ~= "" then
-                Store:SetSearchQuery("")
-            end
-            if callbacks and callbacks.onSearchChanged then
-                callbacks.onSearchChanged()
-            end
-            if nextExpanded and frame.searchBox and frame.searchBox.SetFocus then
-                frame.searchBox:SetFocus()
-            end
-        end
-    )
-    searchBtn:SetPoint("LEFT", topRow, "LEFT", xOffset, 0)
-    frame.searchBtn = searchBtn
-
-    local combatBadge = topRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    combatBadge:SetPoint("BOTTOMRIGHT", topRow, "TOPRIGHT", -2, 1)
+    local combatBadge = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if header.MinimizeButton then
+        combatBadge:SetPoint("RIGHT", header.MinimizeButton, "LEFT", -4, 0)
+    else
+        combatBadge:SetPoint("RIGHT", header, "RIGHT", -22, 0)
+    end
     combatBadge:SetText("|cffff9900(Queued)|r")
     combatBadge:Hide()
     frame.combatBadge = combatBadge
 
-    -- Expandable Search Row
-    local searchRow = CreateFrame("Frame", nil, frame)
-    searchRow:SetHeight(SEARCH_ROW_HEIGHT)
-    searchRow:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -ROW_HEIGHT)
-    searchRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -ROW_HEIGHT)
-    searchRow:Hide()
-    frame.searchRow = searchRow
-
-    local searchBox = CreateFrame("EditBox", "QuestSectionsPlusSearchBox", searchRow, "InputBoxTemplate")
+    -- Native Blizzard SearchBoxNineSliceTemplate (common-searchbar-a + magnifying glass + clearButton)
+    local searchBox = CreateFrame("EditBox", "QuestSectionsPlusSearchBox", frame, "SearchBoxNineSliceTemplate")
     searchBox:SetAutoFocus(false)
-    searchBox:SetHeight(18)
-    searchBox:SetPoint("LEFT", searchRow, "LEFT", 4, 0)
-    searchBox:SetPoint("RIGHT", searchRow, "RIGHT", -22, 0)
+    searchBox:SetHeight(SEARCH_ROW_HEIGHT)
+    local defaultSearchY = -(HEADER_HEIGHT + SEARCH_GAP_Y)
+    searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_INSET, defaultSearchY)
+    searchBox:SetPoint("TOPRIGHT", frame, "TOPRIGHT", RIGHT_INSET, defaultSearchY)
     searchBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
         if (self:GetText() or "") == "" then
@@ -368,7 +474,20 @@ function FilterBar.Create(parentContainer, callbacks)
     searchBox:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
     end)
+    searchBox:SetScript("OnEditFocusGained", function(self)
+        if SearchBoxTemplate_OnEditFocusGained then
+            SearchBoxTemplate_OnEditFocusGained(self)
+        end
+    end)
+    searchBox:SetScript("OnEditFocusLost", function(self)
+        if SearchBoxTemplate_OnEditFocusLost then
+            SearchBoxTemplate_OnEditFocusLost(self)
+        end
+    end)
     searchBox:SetScript("OnTextChanged", function(self)
+        if SearchBoxTemplate_OnTextChanged then
+            SearchBoxTemplate_OnTextChanged(self)
+        end
         if frame.updatingSearchText then
             return
         end
@@ -377,74 +496,81 @@ function FilterBar.Create(parentContainer, callbacks)
             callbacks.onSearchChanged()
         end
     end)
-    frame.searchBox = searchBox
-
-    local clearBtn = CreatePillButton(
-        searchRow,
-        "x",
-        18,
-        "Clear Search",
-        nil,
-        function()
-            Store:SetSearchQuery("")
+    if searchBox.clearButton then
+        searchBox.clearButton:SetScript("OnClick", function(btn)
+            if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+            local parentBox = btn:GetParent() or searchBox
             Store:SetSearchExpanded(false)
-            if frame.searchBox then
-                frame.searchBox:ClearFocus()
+            Store:SetSearchQuery("")
+            if SearchBoxTemplate_ClearText then
+                SearchBoxTemplate_ClearText(parentBox)
+            else
+                parentBox:SetText("")
+                parentBox:ClearFocus()
             end
             if callbacks and callbacks.onSearchChanged then
                 callbacks.onSearchChanged()
             end
-        end
-    )
-    clearBtn:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
-    frame.clearBtn = clearBtn
+        end)
+    end
+    searchBox:Hide()
+    frame.searchBox = searchBox
 
-    -- Blame-free Empty Filter Fallback Action Row
+    -- Native Blizzard Tracker-Line Empty Filter Fallback (zero custom box textures)
     local fallbackBtn = CreateFrame("Button", nil, frame)
     fallbackBtn:SetHeight(FALLBACK_ROW_HEIGHT)
     fallbackBtn:Hide()
 
-    local fbBg = fallbackBtn:CreateTexture(nil, "BACKGROUND")
-    fbBg:SetAllPoints()
-    fbBg:SetColorTexture(0.12, 0.10, 0.04, 0.55)
-
-    local fbHl = fallbackBtn:CreateTexture(nil, "HIGHLIGHT")
-    fbHl:SetAllPoints()
-    fbHl:SetColorTexture(1.0, 0.82, 0.0, 0.15)
-
-    local fbText = fallbackBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    fbText:SetPoint("LEFT", fallbackBtn, "LEFT", 6, 0)
-    fbText:SetPoint("RIGHT", fallbackBtn, "RIGHT", -4, 0)
+    local lineFont = (_G and _G.ObjectiveTrackerLineFont and "ObjectiveTrackerLineFont") or "GameFontHighlightSmall"
+    local fbText = fallbackBtn:CreateFontString(nil, "ARTWORK", lineFont)
+    fbText:SetPoint("LEFT", fallbackBtn, "LEFT", 0, 0)
+    fbText:SetPoint("RIGHT", fallbackBtn, "RIGHT", 0, 0)
     fbText:SetJustifyH("LEFT")
-    fbText:SetTextColor(0.90, 0.80, 0.50)
+    fbText:SetTextColor(0.80, 0.80, 0.80)
     fallbackBtn.Text = fbText
 
+    fallbackBtn:SetScript("OnEnter", function()
+        fbText:SetTextColor(1.0, 0.82, 0.0)
+    end)
+    fallbackBtn:SetScript("OnLeave", function()
+        fbText:SetTextColor(0.80, 0.80, 0.80)
+    end)
     fallbackBtn:SetScript("OnClick", function()
-        Store:SetFilterMode("ALL")
-        Store:SetSearchQuery("")
-        Store:SetHideGray(false)
-        if callbacks and callbacks.onResetFilters then
-            callbacks.onResetFilters()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         end
+        frame:ResetAllFilters()
     end)
     frame.fallbackBtn = fallbackBtn
 
-    -- Wire Blizzard's native Header.FilterButton on ObjectiveTrackerFrame if available
+    -- Wire Blizzard's native Header.FilterButton on ObjectiveTrackerFrame ("All Objectives")
     if parentContainer and parentContainer.Header and parentContainer.Header.FilterButton then
         local nativeFilterBtn = parentContainer.Header.FilterButton
-        nativeFilterBtn:Show()
-        nativeFilterBtn:SetScript("OnClick", function()
-            local acc = Store:GetAccount()
-            Store:SetAccountOption("showFilterBar", not acc.showFilterBar)
-            if callbacks and callbacks.onToggleFilterBar then
-                callbacks.onToggleFilterBar()
+        frame.nativeFilterBtn = nativeFilterBtn
+        nativeFilterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        nativeFilterBtn:SetShown(Store:GetAccount().showFilterBar ~= false)
+        nativeFilterBtn:SetScript("OnClick", function(self, button)
+            if button == "RightButton" then
+                if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
+                    PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+                end
+                frame:ToggleSearchBox()
+            else
+                frame:OpenFilterMenu(self)
             end
         end)
         nativeFilterBtn:SetScript("OnEnter", function(self)
             if GameTooltip then
+                local ch = Store:GetChar()
+                local tags = BuildActiveFilterTags(ch)
+                local activeSummary = (#tags > 0) and table.concat(tags, ", ") or "All Tracked Quests"
                 GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-                GameTooltip:SetText("QuestSectionsPlus Filter Bar", 1, 0.82, 0)
-                GameTooltip:AddLine("Click to show or hide the quick filter toolbar.", 0.85, 0.85, 0.85, true)
+                GameTooltip:SetText("Quest Filter & Options", 1, 0.82, 0)
+                GameTooltip:AddLine("Active: " .. activeSummary, 1, 1, 1, true)
+                GameTooltip:AddLine("Left-Click: Filter & section menu", 0.80, 0.80, 0.80, true)
+                GameTooltip:AddLine("Right-Click: Toggle quest search", 0.80, 0.80, 0.80, true)
                 GameTooltip:Show()
             end
         end)
